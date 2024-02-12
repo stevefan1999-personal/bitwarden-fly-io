@@ -1,0 +1,67 @@
+# Change it to the app name you want
+app = 'bitwarden'
+
+# Change it to the region you want
+primary_region = 'hkg'
+
+# As dotnet runtime currently still eat up a lot of RAM for different things (like JIT cache)
+# It's better to keep some swaps to smooth out the operations. 
+# Not sure how it goes out in the long run when NativeAOT would be the standard on Bitwarden
+swap_size_mb = 1024
+
+[http_service]
+  internal_port = 8080
+
+  # Keep in KDF JS functions has to run in HTTPS connection or otherwise you will have encryption errors when sign up
+  force_https = false
+
+  # Better to keep them up and running. Also because we are using SQLite, we are bounded to single machine only
+  # If you would like to use the Fly Postgres service, maybe you could have scaling, its out of the box anyway 
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ['app']
+
+# In metrics I saw some warning about maxing out connection, so I set an arbitrarily large number of connections enough
+# so that it won't complain in the short term. There seems to be little to no long term consequences either because we
+# are always running one instance and no scaling is needed, so this metric is very much rendered useless 
+# since it is originally intended for autoscaling decisions 
+[http_service.concurrency]
+  type = "connections"
+  hard_limit = 200
+  soft_limit = 200
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+  [[services.ports]]
+    port = 443
+    handlers = ["http", "tls"]
+
+# Depending on your volume name, it can be from a different source
+# Be aware that /etc/bitwarden is the default location too that can be changed in environmental variables
+[mounts]
+  source = "bitwarden_data"
+  destination = "/etc/bitwarden"
+
+[build]
+  # The magic! You can checkout Bitwarden's Dockerhub to get the latest update for sure
+  # https://hub.docker.com/r/bitwarden/self-host/tags
+  # It is typically better to have a fixed version for the sake of deterministism, from a DevOps cultural standpoint
+  image = "bitwarden/self-host:2024.2.0-beta"
+
+# Read their environment variables guide setup here: https://bitwarden.com/help/install-and-deploy-unified-beta/#specify-environment-variables
+[env]
+  # As we are running single instance for personal use, sqlite is good enough
+  BW_DB_PROVIDER = "sqlite"
+  # Use your own fly.io apps hostname for sure, otherwise external communication would screw up because it defaults to localhost
+  BW_DOMAIN = "bitwarden.fly.dev"
+  # Depending on your license you can choose to enable some extra features, although for personal use you won't typically use those features either
+  BW_ENABLE_EVENTS = "true"
+  BW_ENABLE_SCIM = "true"
+  BW_ENABLE_SSO = "true"
+  # Reduces the load to the fly.io machine by offloading icon fetching to the CDN. Not enabled by default so we have to be explicit
+  BW_ICONS_PROXY_TO_CLOUD = "true"
